@@ -1,0 +1,208 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Jogo do Pulo (Círculo vs Obstáculos)</title>
+<style>
+  html, body { height: 100%; margin:0; display:flex; justify-content:center; align-items:center; background:#1e1e1e; }
+  canvas { background:#2a2a2a; border:2px solid #fff; border-radius:12px; }
+</style>
+</head>
+<body>
+<canvas id="game" width="800" height="400"></canvas>
+<script>
+(() => {
+  const canvas = document.getElementById('game');
+  const ctx = canvas.getContext('2d');
+  const W = canvas.width, H = canvas.height;
+  const groundHeight = 60;
+  const groundTop = H - groundHeight;
+
+  const radius = 20;
+  const player = { x:120, y:groundTop-radius, vy:0, onGround:true, jumps:0 };
+
+  let gravity = 0.7, jumpPower = -13.5, baseJumpPower=-13.5;
+  let speed = 5, speedRamp=0.0009, multiplier=1;
+  let obstacles=[], spawnTimer=0, minGap=70, maxGap=140, nextSpawnIn=Math.floor(Math.random()*71)+70;
+  let powerUps=[], powerUpTimer=0, nextPowerUpIn=Math.floor(Math.random()*(800-400+1))+400;
+  let activePowerUp=null, powerUpEndTime=0;
+  let frame=0, score=0, best=0, gameOver=false, paused=false;
+  let thousandUplecounter = 0;
+
+  function randInt(a,b){ return Math.floor(Math.random()*(b-a+1))+a; }
+
+  function chance(p){ return Math.random()*100 < p; }
+
+  function circleRectCollision(cx,cy,r,rx,ry,rw,rh){
+    const closestX=Math.max(rx,Math.min(cx,rx+rw));
+    const closestY=Math.max(ry,Math.min(cy,ry+rh));
+    const dx=cx-closestX, dy=cy-closestY;
+    return dx*dx + dy*dy <= r*r;
+  }
+
+  function reset(){
+    obstacles=[]; powerUps=[]; activePowerUp=null; powerUpEndTime=0;
+    frame=0; score=0; multiplier=1; speed=5; jumpPower=baseJumpPower;
+    nextSpawnIn=randInt(minGap,maxGap); nextPowerUpIn=randInt(400,800);
+    player.x=120; player.y=groundTop-radius; player.vy=0; player.onGround=true; player.jumps=0;
+    gameOver=false; paused=false;
+  }
+
+  window.addEventListener('keydown', e => {
+    if(e.code==='Space'){ 
+      if(gameOver){ reset(); return; }
+      if(player.onGround || (activePowerUp==='doubleJump' && player.jumps<2)){
+        player.vy = jumpPower;
+        player.onGround=false;
+        player.jumps++;
+      }
+    }
+    if(e.code==='KeyR') reset();
+    if(e.code==='KeyP') paused=!paused;
+  });
+
+  function update(){
+    if(gameOver || paused) return;
+    frame++; score+=1*multiplier; speed+=speedRamp;
+
+    if(activePowerUp && frame>powerUpEndTime){
+      if(activePowerUp==='slow') speed/=0.47;
+      if(activePowerUp==='highJump') jumpPower=baseJumpPower;
+      if(activePowerUp==='doublePoints') multiplier=1;
+      if(activePowerUp==='triplePoints') multiplier=1;
+      if(activePowerUp==='quadruplePoints') multiplier=1;
+      if(activePowerUp==='quintuplePoints') multiplier=1;
+      if(activePowerUp==='decuplePoints') multiplier=1;
+      if(activePowerUp==='thousand-uplePoints') multiplier=1;
+      if(activePowerUp==='fast') speed*=0.5;
+      activePowerUp=null;
+    }
+
+    player.vy += gravity;
+    player.y += player.vy;
+    if(player.y>groundTop-radius){ player.y=groundTop-radius; player.vy=0; player.onGround=true; player.jumps=0; }
+
+    spawnTimer++;
+    if(spawnTimer>=nextSpawnIn){
+      spawnTimer=0;
+      nextSpawnIn=Math.min(nextSpawnIn+randInt(1,3), maxGap);
+      const h=randInt(40,100), w=randInt(25,45), y=groundTop-h;
+      obstacles.push({x:W+10, y, w, h});
+    }
+
+    powerUpTimer++;
+    if(powerUpTimer>=nextPowerUpIn){
+      powerUpTimer=0; nextPowerUpIn=randInt(400,800);
+      const types=['slow','highJump','doubleJump','doublePoints','fast'];
+      let type = types[randInt(0,types.length-1)];
+
+      if(type==='doublePoints' && chance(8.75)) type='triplePoints';
+      if(type==='triplePoints' && chance(0.33454)) type='quadruplePoints';
+      if(type==='quadruplePoints' && chance(0.005)) type='quintuplePoints';
+      if(type==='quintuplePoints' && chance(0.00000032)) type='decuplePoints';
+//    if(type==='decuplePoints' && chance(1.32e-307)) type='thousand-uplePoints';
+
+      powerUps.push({x:W+10, y:randInt(100,groundTop-50), w:20, h:20, type});
+    }
+
+    obstacles.forEach((o,i)=>{
+      o.x-=speed;
+      if(circleRectCollision(player.x,player.y,radius,o.x+5,o.y+5,o.w-10,o.h-10)){
+        gameOver=true; best=Math.max(best,score);
+      }
+    });
+
+    powerUps.forEach((p,i)=>{
+      p.x-=speed;
+      if(circleRectCollision(player.x,player.y,radius,p.x,p.y,p.w,p.h)){
+        activatePowerUp(p.type);
+        powerUps.splice(i,1);
+      }
+    });
+
+    obstacles = obstacles.filter(o => o.x+o.w>-50);
+    powerUps = powerUps.filter(p => p.x+p.w>-50);
+  }
+
+  function activatePowerUp(type){
+    activePowerUp=type;
+    powerUpEndTime=frame+randInt(600,900);
+    if(type==='slow') speed*=0.47;
+    if(type==='highJump') jumpPower=baseJumpPower*1.5;
+    if(type==='fast') speed/=0.5;
+    if(type==='doubleJump') player.jumps=0;
+
+    if(type==='doublePoints') multiplier=2;
+    if(type==='triplePoints') multiplier=3;
+    if(type==='quadruplePoints') multiplier=4;
+    if(type==='quintuplePoints') multiplier=5;
+    if(type==='decuplePoints') multiplier=10;
+    if(type==='thousand-uplePoints') multiplier=1000;
+  }
+
+  function draw(){
+    ctx.clearRect(0,0,W,H);
+
+    ctx.fillStyle='#333'; ctx.fillRect(0,groundTop,W,groundHeight);
+
+
+    obstacles.forEach(o=>{ ctx.fillStyle='#ff4d4d'; ctx.fillRect(o.x,o.y,o.w,o.h); });
+
+
+    powerUps.forEach(p=>{
+      switch(p.type){
+        case 'slow': ctx.fillStyle='#00ff00'; break;
+        case 'highJump': ctx.fillStyle='#ffff00'; break;
+        case 'doubleJump': ctx.fillStyle='#ff00ff'; break;
+        case 'doublePoints': ctx.fillStyle='#00ffff'; break;
+        case 'triplePoints': ctx.fillStyle='#4baecc'; break;
+        case 'quadruplePoints': ctx.fillStyle='#347cbf'; break;
+        case 'quintuplePoints': ctx.fillStyle='#1d4b75'; break;
+        case 'decuplePoints':
+          // Cor oscilante ciano <-> azul marinho
+          const t = (Math.sin(frame/30)+1)/2; // valor 0..1
+          const r = Math.floor(0*t + 0*(1-t));
+          const g = Math.floor(255*t + 0*(1-t));
+          const b = Math.floor(255*t + 128*(1-t));
+          ctx.fillStyle=`rgb(${r},${g},${b})`;
+          break;
+        case 'fast': ctx.fillStyle='#ff0000'; break;
+      }
+      ctx.fillRect(p.x,p.y,p.w,p.h);
+    });
+
+
+    ctx.beginPath(); ctx.arc(player.x,player.y,radius,0,Math.PI*2);
+    ctx.fillStyle='#00ffff'; ctx.fill();
+
+    ctx.fillStyle='#fff'; ctx.font='16px sans-serif';
+    ctx.fillText(`Score: ${score}`,12,24);
+    ctx.fillText(`Recorde: ${best}`,12,44);
+    if(activePowerUp){
+      const t=Math.max(0,Math.floor((powerUpEndTime-frame)/60));
+      ctx.fillText(`Power-Up: ${activePowerUp} (${t}s)`,12,64);
+    }
+
+    if(gameOver){
+      ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='#fff'; ctx.font='bold 28px sans-serif'; ctx.textAlign='center';
+      ctx.fillText('GAME OVER', W/2,H/2-10);
+      ctx.font='16px sans-serif'; ctx.fillText('Pressione ESPAÇO ou R para reiniciar', W/2,H/2+20);
+      ctx.textAlign='start';
+    }
+
+    if(paused){
+      ctx.fillStyle='rgba(0,0,0,0.5)'; ctx.fillRect(0,0,W,H);
+      ctx.fillStyle='#fff'; ctx.font='bold 28px sans-serif'; ctx.textAlign='center';
+      ctx.fillText('PAUSE', W/2,H/2);
+      ctx.textAlign='start';
+    }
+  }
+
+  function loop(){ update(); draw(); requestAnimationFrame(loop); }
+  loop();
+})();
+</script>
+</body>
+</html>
